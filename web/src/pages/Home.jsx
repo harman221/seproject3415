@@ -1,4 +1,15 @@
+import React from "react";
+import { useNavigate } from "react-router-dom";
+
+
+
+
 export default function Home() {
+  const navigate = useNavigate();
+
+  const handleBrowse = () => {
+    navigate("/restaurants");
+  };
   return (
     <div className="p-6">
       {/* <h1 className="text-3xl font-bold">Welcome to Delivery</h1>
@@ -6,7 +17,7 @@ export default function Home() {
       <div className="hero">
         <h1>🍔 Fresh Food, Fast Delivery</h1>
         <p>Order from your favorite local restaurants with just a few clicks.</p>
-        <button className="primary-btn">Browse Restaurants</button>
+        <button className="primary-btn" onClick={handleBrowse}>Browse Restaurants</button>
       </div>
 
       <div className="sample-restaurants">
