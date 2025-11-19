@@ -169,7 +169,7 @@ export default function NavBar({ onSelectRole }) {
                   ))}
                 </ul>
               )}
-              <Link to="/login" className="ghost-btn">Sign up</Link>
+              <Link to="/signup" className="ghost-btn">Sign up</Link>
             </div>
           )}
         </div>
