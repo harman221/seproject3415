@@ -3,16 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 
-// HOME VIEW PAGE - Entry url for all users (links to Login.jsx and BrowseRestaurants.jsx)
-
-// IMPORT LOGO
-import logo from "../assets/logo-no-bg.png";
+// HOME VIEW PAGE - Entry url for all users (links to Login.jsx and BrowseRestaurants.jsx);
 
 export default function Home() {
     const navigate = useNavigate();
     const [restaurantTypes, setRestaurantTypes] = useState([]);
     const [iconMap, setIconMap] = useState({});
     const [loading, setLoading] = useState(true);
+
+    const loopedTypes = restaurantTypes.length
+      ? [...restaurantTypes, ...restaurantTypes, ...restaurantTypes]
+      : [];
 
     // FUNCTION: handles navigation when the main button is clicked (no filter)
     const handleBrowse = () => {
@@ -72,12 +73,25 @@ export default function Home() {
     return (
         <div className="p-6 space-y-10">
 
-            <div className="w-full flex justify-center mt-4">
-                <img 
-                    src={logo} 
-                    alt="Grab N Go Logo" 
-                    className="w-64 md:w-96"
-                />
+            <div className="sample-restaurants overflow-hidden">
+              <div className="flex gap-3 items-center animate-marquee whitespace-nowrap">
+                {loading ? (
+                  <p>Loading restaurant categories...</p>
+                ) : loopedTypes.length > 0 ? (
+                  loopedTypes.map((type, index) => (
+                    <button
+                      key={`${type}-${index}`}
+                      className="restaurant-card inline-flex items-center gap-2 px-4 py-2 border rounded-xl shadow min-w-[170px] justify-center shrink-0"
+                      onClick={() => handleTypeClick(type)}
+                    >
+                      <span className="type-icon text-2xl">{getIconForType(type)}</span>
+                      <span className="truncate">{type}</span>
+                    </button>
+                  ))
+                ) : (
+                  <p>No restaurant categories available.</p>
+                )}
+              </div>
             </div>
 
             <div className="hero text-center">
@@ -86,25 +100,6 @@ export default function Home() {
                 <button className="primary-btn mt-4" onClick={handleBrowse}>
                     Browse All Restaurants
                 </button>
-            </div>
-
-            <div className="sample-restaurants flex flex-wrap gap-3 justify-center items-center">
-                {loading ? (
-                    <p>Loading restaurant categories...</p>
-                ) : restaurantTypes.length > 0 ? (
-                    restaurantTypes.map((type, index) => (
-                        <button 
-                            key={index} 
-                            className="restaurant-card flex items-center gap-2 px-4 py-2 border rounded-xl shadow"
-                            onClick={() => handleTypeClick(type)} 
-                        >
-                            <span className="type-icon text-2xl">{getIconForType(type)}</span>
-                            {type}
-                        </button>
-                    ))
-                ) : (
-                    <p>No restaurant categories available.</p>
-                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mt-10">
@@ -116,7 +111,7 @@ export default function Home() {
                     />
                     <h2 className="text-xl font-bold pt-6 text-center">Become a Customer</h2>
                     <div className="flex justify-center mt-4">
-                        <a href="/become-a-customer" className="primary-btn">Order Now</a>
+                        <a href="/become-a-customer" className="primary-btn !text-white hover:!text-white focus:!text-white active:!text-white">Order Now</a>
                     </div>
                 </div>
 
@@ -128,7 +123,7 @@ export default function Home() {
                     />
                     <h2 className="text-xl font-bold pt-6 text-center">Join Us Now</h2>
                     <div className="flex justify-center mt-4">
-                        <a href="/become-a-restaurant" className="primary-btn">Add Your Restaurant</a>
+                        <a href="/become-a-restaurant" className="primary-btn !text-white hover:!text-white focus:!text-white active:!text-white">Add Your Restaurant</a>
                     </div>
                 </div>
 
@@ -140,7 +135,7 @@ export default function Home() {
                     />
                     <h2 className="text-xl font-bold pt-6 text-center">Become a Courier</h2>
                     <div className="flex justify-center mt-4">
-                        <a href="/become-a-courier" className="primary-btn">Sign up to Deliver</a>
+                        <a href="/become-a-courier" className="primary-btn !text-white hover:!text-white focus:!text-white active:!text-white">Sign up to Deliver</a>
                     </div>
                 </div>
             </div>
