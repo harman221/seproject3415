@@ -3,6 +3,9 @@ import { getDistanceInKm } from "../utils/getDistanceInKm.js";
 
 const COURIER_SPEED_KMH = 30; 
 
+// Calculates the courier-to-restaurant distance, restaurant-to-user distance, total trip distance, 
+// estimated courier pick up time, estimated user delivery time, courier-to-restaurant estimated time of arrival, 
+// and courier-to-user estimated time of arrival used in RestaurantPage.jsx.
 export function calculateEtaRestaurant(locations, now, preppedDate) {
     const { courierLoc, restaurantLoc, userLoc } = locations;
     let total_Distance = null;
