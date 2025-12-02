@@ -1,5 +1,6 @@
 import { getDistanceInKm } from "../utils/getDistanceInKm.js";
 
+// Calculates the courier-to-restaurant and total trip distances used in CourierPage.jsx. 
 export const calcLocalCourierDist = (order, courierCoords) => {
     const restaurantCoords = order.restaurantLocation;
     const userCoords = order.userLocation;
