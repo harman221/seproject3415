@@ -4,6 +4,7 @@ import BannerManager from "./bannerUpload.jsx";
 
 const phoneRegex = /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/;
 
+// Contains a form to edit basic restaurant data including: store name, address, phone number, type, and working hours.
 export default function InfoTab({
   restaurantData,
   setRestaurantData,
