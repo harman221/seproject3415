@@ -4,6 +4,8 @@ import { db } from "../../firebase";
 
 const REPLY_TIMEOUT_EXTENSION_MS = 300000; 
 
+// Contains a list of orders that are being prepared and orders that are awaiting courier pick-up. 
+// Manually accepting orders and responding to order notes occurs here.
 export default function OrdersTab({
   restaurantData,
   loadingOrders,
@@ -51,7 +53,7 @@ export default function OrdersTab({
       const newTimeoutMillis = Date.now() + REPLY_TIMEOUT_EXTENSION_MS;
       const newOrderTimeout = Timestamp.fromMillis(newTimeoutMillis);
       
-      // Look for the order in either array (pending or confirmed)
+      // Look for the order in pending or confirmed order array
       const targetOrder = pendingOrders.find(o => o.orderId === orderId) || confirmedOrders.find(o => o.orderId === orderId);
       try {
           const orderRef = doc(db, "restaurants", restaurantData.id, "restaurantOrders", orderId);
@@ -114,7 +116,7 @@ export default function OrdersTab({
         ))}
       </ul>
       
-      {/* Display Global Order Notes */}
+      {/* Display order notes */}
       {Array.isArray(order.restaurantNote) && order.restaurantNote.length > 0 && (
         <> 
           <strong className="block mb-1 mt-4 text-base border-t pt-2">Order Note:</strong>
@@ -123,7 +125,7 @@ export default function OrdersTab({
                 const noteContent = (note && typeof note === 'string' && note.trim() !== "") ? note.trim() : null;
                 if (!noteContent) return null;
 
-                let noteClass = 'bg-gray-100 border-gray-300 text-gray-800'; // Default
+                let noteClass = 'bg-gray-100 border-gray-300 text-gray-800';
                 let displayNote = noteContent;
 
                 if (noteContent.startsWith(`${restaurantData.storeName}`)) {
@@ -156,7 +158,7 @@ export default function OrdersTab({
       </h2>
       <hr />
 
-      {/* --- NEW ORDERS AWAITING CONFIRMATION --- */}
+      {/* NEW ORDERS AWAITING CONFIRMATION */}
       <div className="mt-6">
         <h3 className="text-xl font-semibold mb-4 border-b pb-2 text-black-800">New Orders</h3>
         {loadingOrders ? (
@@ -178,7 +180,7 @@ export default function OrdersTab({
                         <OrderItemDetails order={order} />
                       </div>
 
-                      {/* --- TIME BANNER --- */}
+                      {/* TIME BANNER */}
                       <div className="bg-yellow-400 text-yellow-900 text-med font-bold py-2 px-3 rounded-tr rounded-bl shadow-md z-10 -mt-4 -mr-4">
                         <div className="text-gray-800 font-normal mb-1">
                           <strong>Placed:</strong>{" "}
@@ -195,7 +197,7 @@ export default function OrdersTab({
                         )}
                       </div>
                     </div>
-                    {/* Conditional Wrapper: ONLY show for unhandled orders */}
+                    {/* shows only for unhandled orders */}
                     {order.orderConfirmed == null && (
                       <div className="mt-4 flex flex-col space-y-3">
                           {hasCustomerNote(order) && (
@@ -211,7 +213,7 @@ export default function OrdersTab({
                               </div>
                           )}
                           <div className={`grid gap-3 ${hasCustomerNote(order) ? 'mt-3 sm:grid-cols-3' : 'mt-3 sm:grid-cols-2'}`}>
-                              {/* Conditional Reply Button */}
+                              {/* Conditional reply button */}
                               {hasCustomerNote(order) && (
                                   <button
                                       onClick={() => handleReply(order.orderId, replyText[order.orderId])}
@@ -245,7 +247,7 @@ export default function OrdersTab({
         )}
       </div>
 
-      {/* --- CONFIRMED BY RESTAURANT ORDERS --- */}
+      {/* CONFIRMED BY RESTAURANT ORDERS */}
       <div className="mt-10">
         <h3 className="text-xl font-semibold mb-4 border-b pb-2 text-black-800">
           Confirmed Orders
@@ -283,7 +285,7 @@ export default function OrdersTab({
         )}
       </div>
 
-      {/* --- COURIER CONFIRMED ORDERS --- */}
+      {/* COURIER CONFIRMED ORDERS */}
       <div className="mt-10">
         <h3 className="text-xl font-semibold mb-4 border-b pb-2 text-black-800">
           Courier Confirmed Orders
