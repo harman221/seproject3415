@@ -1,4 +1,6 @@
-// OrderPage.jsx function - RESTAURANT OPEN TIMES
+// RESTAURANT OPEN TIMES
+// In OrderPage.jsx, if a restaurant is open, a user is able to order. 
+// Conversely, if the restaurant is closed, a user cannot place an order. The restaurant will have the status “closed” in UserPage.jsx.
 export function isRestaurantOpenToday(hoursArray, now = new Date()) {
   const days = [
     "Sunday",
