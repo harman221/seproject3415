@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase/firestore';
 import { getDistanceInKm } from "../utils/getDistanceInKm.js";
 
-const COURIER_SPEED_KMH = 60;
+const COURIER_SPEED_KMH = 30;
 
 // Calculates the courier-to-user distance,  courier-to-user estimated time of arrival, and estimated time of delivery used in CourierPage.jsx.
 export const calculateEtaCourier = (courierLoc, userLoc, now) => {
