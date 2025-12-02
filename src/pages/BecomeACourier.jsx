@@ -9,7 +9,7 @@ export default function BecomeACourier() {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
-                <div className="p-6 rounded-2xl shadow bg-white border border border">
+                <div className="p-6 rounded-2xl shadow bg-white border">
                     <h2 className="text-2xl font-semibold mb-2">Flexible Schedule</h2>
                     <p className="text-gray-600">
                         Work whenever you want! Mornings, evenings, weekends, or full‑time.
@@ -17,7 +17,7 @@ export default function BecomeACourier() {
                     </p>
                 </div>
 
-                <div className="p-6 rounded-2xl shadow bg-white border border border">
+                <div className="p-6 rounded-2xl shadow bg-white border">
                     <h2 className="text-2xl font-semibold mb-2">Great Earnings</h2>
                     <p className="text-gray-600">
                         Earn per delivery, plus keep 100% of your tips. High‑demand times
@@ -25,7 +25,7 @@ export default function BecomeACourier() {
                     </p>
                 </div>
 
-                <div className="p-6 rounded-2xl shadow bg-white border border border">
+                <div className="p-6 rounded-2xl shadow bg-white border">
                     <h2 className="text-2xl font-semibold mb-2">Easy to Start</h2>
                     <p className="text-gray-600">
                         Sign up, get approved, and start delivering quickly, no complicated
@@ -33,7 +33,7 @@ export default function BecomeACourier() {
                     </p>
                 </div>
 
-                <div className="p-6 rounded-2xl shadow bg-white border border border">
+                <div className="p-6 rounded-2xl shadow bg-white border">
                     <h2 className="text-2xl font-semibold mb-2">Deliver Your Way</h2>
                     <p className="text-gray-600">
                         Use a bike, car, scooter, or whatever fits your lifestyle and your city.

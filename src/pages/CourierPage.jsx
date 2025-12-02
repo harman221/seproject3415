@@ -19,6 +19,20 @@ import {
 import { coordinateFormat } from "../utils/coordinateFormat";
 import { calculateEtaCourier } from "../utils/calculateEtaCourier";
 
+// Map (same stack as User/HomeTab)
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix default leaflet marker icons (webpack/vite)
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
 // Simple runtime guard so UI does not fully crash
 const safeWrap = (fn) => {
   try {
@@ -81,6 +95,52 @@ async function fetchOsrmRoute(from, to) {
 }
 
 /**
+ * Fetch OSRM directions + turn-by-turn steps for UI.
+ * Returns { route, steps }
+ */
+async function fetchOsrmDirections(from, to) {
+  const url =
+    `https://router.project-osrm.org/route/v1/driving/` +
+    `${from.longitude},${from.latitude};` +
+    `${to.longitude},${to.latitude}` +
+    `?overview=full&geometries=geojson&steps=true`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`);
+
+  const data = await res.json();
+  if (!data.routes || !data.routes[0]) {
+    throw new Error(data.code || "No route");
+  }
+
+  const coords = data.routes[0].geometry.coordinates;
+  const route = coords.map(([lng, lat]) => ({
+    latitude: lat,
+    longitude: lng,
+  }));
+
+  const osrmSteps = data.routes[0].legs?.[0]?.steps || [];
+  const steps = osrmSteps.map((s) => {
+    const distKm = (s.distance || 0) / 1000;
+    const durMin = (s.duration || 0) / 60;
+    const manLoc = s.maneuver?.location; // [lng, lat]
+    const loc =
+      Array.isArray(manLoc) && manLoc.length === 2
+        ? [manLoc[1], manLoc[0]]
+        : null;
+
+    return {
+      instruction: s.maneuver?.instruction || s.name || "Continue",
+      distanceKm: distKm,
+      durationMin: durMin,
+      location: loc,
+    };
+  });
+
+  return { route, steps };
+}
+
+/**
  * Get or create route for a given task leg:
  *  - "toRestaurant": SIM_ORIGIN -> restaurant
  *  - "toUser": restaurant -> user
@@ -116,8 +176,10 @@ async function getOrCreateRouteForTaskLeg(task, leg) {
   let from, to;
 
   if (leg === "toRestaurant") {
-    // SIM_ORIGIN -> restaurant
-    from = SIM_ORIGIN;
+    // Start from courier's last known location for this session if available,
+    // otherwise fall back to SIM_ORIGIN.
+    const taskCourierLoc = coordinateFormat(task.courierLocation);
+    from = taskCourierLoc || SIM_ORIGIN;
     to = restaurantLoc;
   } else {
     // restaurant -> user
@@ -199,6 +261,19 @@ export default function CourierPage() {
   const [orders, setOrders] = useState([]);
   const [fetchingOrders, setFetchingOrders] = useState(true);
   const [currentTask, setCurrentTask] = useState(null);
+// Live route + navigation steps for current leg
+const [navRoute, setNavRoute] = useState(null); // [{latitude, longitude}]
+const [navSteps, setNavSteps] = useState([]);   // [{instruction, distanceKm, durationMin, location}]
+const [activeStepIdx, setActiveStepIdx] = useState(0);
+const [navLeg, setNavLeg] = useState(null);     // "toRestaurant" | "toUser"
+const [navLoading, setNavLoading] = useState(false);
+const [navError, setNavError] = useState("");
+
+// Throttle OSRM directions to avoid spamming network
+const directionsIntervalRef = useRef(null);
+const lastDirectionsKeyRef = useRef("");
+const lastDirectionsAtRef = useRef(0);
+const navFetchInFlightRef = useRef(false);
 
   const courierDataRef = useRef(courierData);
   const currentTaskRef = useRef(currentTask);
@@ -262,6 +337,114 @@ export default function CourierPage() {
     currentTaskRef.current = currentTask;
   }, [currentTask]);
 
+// Load OSRM directions for active leg, but throttle to once per 10s max
+useEffect(() => {
+  // clear any previous interval
+  if (directionsIntervalRef.current) {
+    clearInterval(directionsIntervalRef.current);
+    directionsIntervalRef.current = null;
+  }
+
+  const runDirectionsFetch = () => {
+    safeWrap(async () => {
+      const task = currentTaskRef.current;
+      const courierLL = getCourierLatLng();
+
+      if (!task || !courierLL) {
+        setNavRoute(null);
+        setNavSteps([]);
+        setActiveStepIdx(0);
+        setNavLeg(null);
+        setNavError("");
+        lastDirectionsKeyRef.current = "";
+        return;
+      }
+
+      const leg = task.courierPickedUp ? "toUser" : "toRestaurant";
+      setNavLeg(leg);
+
+      const restaurantLoc = coordinateFormat(task.restaurantLocation);
+      const userLoc = coordinateFormat(task.userLocation);
+      const courierLoc = { latitude: courierLL[0], longitude: courierLL[1] };
+
+      const from = courierLoc;
+      const to = leg === "toRestaurant" ? restaurantLoc : userLoc;
+
+      if (!to || typeof to.latitude !== "number" || typeof to.longitude !== "number") {
+        setNavError("Missing destination coordinates.");
+        return;
+      }
+
+      const storedField = leg === "toUser" ? "routeToUser" : "routeToRestaurant";
+      const hasStored = Array.isArray(task[storedField]) && task[storedField].length > 1;
+
+      // Key changes when task/leg changes
+      const key = `${task.orderId}__${leg}`;
+
+      // throttle: 10s between calls and never overlap
+      const now = Date.now();
+      if (navFetchInFlightRef.current) return;
+      if (key === lastDirectionsKeyRef.current && now - lastDirectionsAtRef.current < 10000) return;
+
+      navFetchInFlightRef.current = true;
+      lastDirectionsKeyRef.current = key;
+      lastDirectionsAtRef.current = now;
+
+      try {
+        setNavError("");
+        setNavLoading(true);
+
+        const { route, steps } = await fetchOsrmDirections(from, to);
+
+        setNavSteps(steps);
+        setActiveStepIdx(getClosestStepIndex(courierLL, steps));
+
+        if (hasStored) {
+          setNavRoute(
+            task[storedField].map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
+          );
+        } else {
+          setNavRoute(route);
+        }
+      } catch (e) {
+        console.warn("OSRM directions failed:", e);
+
+        const fallbackRoute = hasStored
+          ? task[storedField].map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
+          : [from, to];
+
+        setNavRoute(fallbackRoute);
+        setNavSteps([]);
+        setActiveStepIdx(0);
+        setNavError("Could not load directions (using fallback route)." );
+      } finally {
+        setNavLoading(false);
+        navFetchInFlightRef.current = false;
+      }
+    });
+  };
+
+  // run once immediately when task/leg changes
+  runDirectionsFetch();
+
+  // then poll every 10s
+  directionsIntervalRef.current = setInterval(runDirectionsFetch, 10000);
+
+  return () => {
+    if (directionsIntervalRef.current) {
+      clearInterval(directionsIntervalRef.current);
+      directionsIntervalRef.current = null;
+    }
+  };
+}, [currentTask?.orderId, currentTask?.courierPickedUp]);
+
+// Update active step as courier moves
+useEffect(() => {
+  const courierLL = getCourierLatLng();
+  if (!courierLL || navSteps.length === 0) return;
+  setActiveStepIdx(getClosestStepIndex(courierLL, navSteps));
+}, [courierData?.location, navSteps]);
+
   const CURRENT_TIME_MS = Date.now();
 
   // Helper function to format order timestamps
@@ -276,6 +459,48 @@ export default function CourierPage() {
       orderTime.seconds * 1000 + orderTime.nanoseconds / 1000000;
     return currentTime <= orderTimeMs;
   };
+
+  // Format km values safely for UI
+  const formatKm = (v) => {
+    const n = typeof v === "string" ? Number(v) : v;
+    return typeof n === "number" && !Number.isNaN(n)
+      ? n.toFixed(2)
+      : "—";
+  };
+
+  // Safe lat/lng extraction for Leaflet
+  const toLatLng = (loc) => {
+    const f = coordinateFormat(loc);
+    if (!f || typeof f.latitude !== "number" || typeof f.longitude !== "number") {
+      return null;
+    }
+    return [f.latitude, f.longitude];
+  };
+
+  const getCourierLatLng = () => {
+    if (!courierData?.location) return null;
+    return [courierData.location.latitude, courierData.location.longitude];
+  };
+
+  const getClosestStepIndex = (courierLL, steps) => {
+  if (!courierLL || !Array.isArray(steps) || steps.length === 0) return 0;
+
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  const a = { latitude: courierLL[0], longitude: courierLL[1] };
+
+  steps.forEach((s, i) => {
+    if (!s.location) return;
+    const b = { latitude: s.location[0], longitude: s.location[1] };
+    const d = metersBetween(a, b);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  });
+
+  return bestIdx;
+};
 
   // Helper function to update courier status in Firestore and state
   const updateCourierDoc = async (updates) => {
@@ -995,6 +1220,9 @@ export default function CourierPage() {
       batch.update(orderDocRef, {
         courierConfirmed: true,
         courierId: courierData.courierId,
+        // Persist starting point so routing/simulator begins from current courier location,
+        // not the fixed SIM_ORIGIN.
+        courierLocation: courierData.location || new GeoPoint(SIM_ORIGIN.latitude, SIM_ORIGIN.longitude),
       });
 
       batch.update(courierDocRef, {
@@ -1020,7 +1248,7 @@ export default function CourierPage() {
         console.warn("Could not precompute routeToRestaurant at accept:", e);
       }
 
-      // Auto-start simulator along route from SIM_ORIGIN -> restaurant (dev only)
+      // Auto-start simulator along route from courier's current location -> restaurant (dev only)
       if (simulator.enabled) {
         try {
           const route = await getOrCreateRouteForTaskLeg(
@@ -1436,6 +1664,127 @@ export default function CourierPage() {
             </div>
           </section>
 
+          {/* Live Map */}
+          <section className="mb-8 border rounded-lg bg-white shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b bg-gray-50">
+              <h2 className="text-sm font-semibold text-gray-800">Live Map</h2>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Shows courier, restaurant, and customer locations. Updates live as GPS/simulator updates.
+              </p>
+            </div>
+
+            {(() => {
+              const courierLL = getCourierLatLng();
+              const restLL = currentTask ? toLatLng(currentTask.restaurantLocation) : null;
+              const userLL = currentTask ? toLatLng(currentTask.userLocation) : null;
+
+              // Fallback center priority: courier -> restaurant -> user -> SIM_ORIGIN
+              const center = courierLL || restLL || userLL || [SIM_ORIGIN.latitude, SIM_ORIGIN.longitude];
+
+              const linePoints = navRoute
+              ? navRoute.map((p) => [p.latitude, p.longitude])
+              : [courierLL, restLL, userLL].filter(Boolean);
+
+              return (
+                <div className="h-[280px] md:h-[360px] w-full">
+                  <MapContainer
+                    center={center}
+                    zoom={13}
+                    scrollWheelZoom={true}
+                    style={{ height: "100%", width: "100%" }}
+                  >
+                    <TileLayer
+                      attribution='&copy; OpenStreetMap contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+
+                    {courierLL && (
+                      <Marker position={courierLL}>
+                        <Popup>
+                          <div className="text-xs">
+                            <div className="font-semibold">Courier</div>
+                            <div>{courierData?.name || courierData?.email}</div>
+                            {movementMeta?.phase && <div>Phase: {movementMeta.phase}</div>}
+                          </div>
+                        </Popup>
+                      </Marker>
+                    )}
+
+                    {restLL && (
+                      <Marker position={restLL}>
+                        <Popup>
+                          <div className="text-xs">
+                            <div className="font-semibold">Restaurant</div>
+                            <div>{currentTask?.storeName}</div>
+                            <div>{currentTask?.restaurantAddress}</div>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    )}
+
+                    {userLL && (
+                      <Marker position={userLL}>
+                        <Popup>
+                          <div className="text-xs">
+                            <div className="font-semibold">Customer</div>
+                            <div>{currentTask?.userAddress}</div>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    )}
+
+                    {linePoints.length >= 2 && (
+                      <Polyline positions={linePoints} />
+                    )}
+                  </MapContainer>
+                </div>
+              );
+            })()}
+          </section>
+          {/* Navigation Steps */}
+<section className="mb-8 border rounded-lg bg-white shadow-sm overflow-hidden">
+  <div className="px-4 py-3 border-b bg-gray-50">
+    <h2 className="text-sm font-semibold text-gray-800">Navigation</h2>
+    <p className="text-[11px] text-gray-500 mt-0.5">
+      {navLeg === "toRestaurant"
+        ? "Heading to restaurant"
+        : navLeg === "toUser"
+        ? "Delivering to customer"
+        : "No active route"}
+    </p>
+  </div>
+
+  <div className="p-4 text-xs text-gray-700 space-y-2">
+    {navLoading && <div className="text-gray-500">Loading directions…</div>}
+
+    {navError && (
+      <div className="text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1 rounded">
+        {navError}
+      </div>
+    )}
+
+    {!navLoading && navSteps.length === 0 && (
+      <div className="text-gray-500">No turn-by-turn steps available.</div>
+    )}
+
+    {navSteps.length > 0 && (
+      <ol className="list-decimal ml-4 space-y-1">
+        {navSteps.slice(activeStepIdx, activeStepIdx + 8).map((s, i) => (
+          <li
+            key={`${activeStepIdx + i}__step`}
+            className={i === 0 ? "font-semibold text-indigo-700" : ""}
+          >
+            {s.instruction}
+            <span className="text-gray-500">
+              {" "}· {s.distanceKm.toFixed(2)} km · {Math.max(1, Math.round(s.durationMin))} min
+            </span>
+          </li>
+        ))}
+      </ol>
+    )}
+  </div>
+</section>
+
           {/* Courier Info + Stats */}
           <section className="mb-8 grid md:grid-cols-2 gap-4">
             <div className="border rounded-lg bg-white shadow-sm">
@@ -1547,38 +1896,69 @@ export default function CourierPage() {
                       <tr>
                         <th className="py-2 px-2 text-left">Order ID</th>
                         <th className="py-2 px-2 text-left">Payout</th>
-                        <th className="py-2 px-2 text-left">
-                          Restaurant Distance:{" "}
-                          <span className="font-normal">
-                            {currentTask.restaurantAddress}
-                          </span>
-                        </th>
-                        <th className="py-2 px-2 text-left">
-                          Total Trip:{" "}
-                          <span className="font-normal">
-                            {currentTask.userAddress}
-                          </span>
-                        </th>
+                        <th className="py-2 px-2 text-left">Restaurant</th>
+                        <th className="py-2 px-2 text-left">Customer / Trip</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td className="py-1 px-2 font-semibold">
-                          {currentTask.orderId}
-                        </td>
-                        <td className="py-1 px-2 font-semibold text-green-600">
-                          ${Number(currentTask.paymentCourier ?? 0).toFixed(2)}
-                        </td>
-                        <td className="py-1 px-2">
-                          {currentTask.courier_R_Distance}km
-                        </td>
-                        <td className="py-1 px-2">
-                          {currentTask.courierPickedUp
+                      {(() => {
+                        const courierLoc = courierData?.location
+                          ? {
+                              latitude: courierData.location.latitude,
+                              longitude: courierData.location.longitude,
+                            }
+                          : null;
+
+                        const restLoc = currentTask.restaurantLocation
+                          ? coordinateFormat(currentTask.restaurantLocation)
+                          : null;
+
+                        const userLoc = currentTask.userLocation
+                          ? coordinateFormat(currentTask.userLocation)
+                          : null;
+
+                        const restKm =
+                          typeof currentTask.courier_R_Distance === "number"
+                            ? currentTask.courier_R_Distance
+                            : courierLoc && restLoc
+                            ? metersBetween(courierLoc, restLoc) / 1000
+                            : null;
+
+                        const tripKm =
+                          typeof currentTask.total_Distance === "number"
+                            ? currentTask.total_Distance
+                            : restLoc && userLoc
+                            ? metersBetween(restLoc, userLoc) / 1000
+                            : null;
+
+                        const toUserKm =
+                          typeof currentTask.courier_U_Distance === "number"
                             ? currentTask.courier_U_Distance
-                            : currentTask.total_Distance}
-                          km
-                        </td>
-                      </tr>
+                            : courierLoc && userLoc
+                            ? metersBetween(courierLoc, userLoc) / 1000
+                            : null;
+
+                        return (
+                          <tr>
+                            <td className="py-1 px-2 font-semibold">
+                              {currentTask.orderId}
+                            </td>
+                            <td className="py-1 px-2 font-semibold text-green-600">
+                              ${Number(currentTask.paymentCourier ?? 0).toFixed(2)}
+                            </td>
+                            <td className="py-1 px-2">
+                              {currentTask.restaurantAddress}
+                              <br />
+                              {formatKm(restKm)} km
+                            </td>
+                            <td className="py-1 px-2">
+                              {currentTask.userAddress}
+                              <br />
+                              {formatKm(currentTask.courierPickedUp ? toUserKm : tripKm)} km
+                            </td>
+                          </tr>
+                        );
+                      })()}
                     </tbody>
                   </table>
 
@@ -1644,89 +2024,116 @@ export default function CourierPage() {
                       // 2. Order by shortest total_Distance first
                       return (a.total_Distance || 0) - (b.total_Distance || 0);
                     })
-                    .map((order, idx) => (
-                      <li
-                        key={`${order.restaurantId}__${order.orderId}__${idx}`}
-                        className="p-4 border rounded shadow-md bg-white"
-                      >
-                        <table className="w-full text-sm mb-3">
-                          <thead className="border-b bg-gray-50">
-                            <tr>
-                              <th className="py-2 px-2 text-left">Order ID</th>
-                              <th className="py-2 px-2 text-left">Payout</th>
-                              <th className="py-2 px-2 text-left">Ready At</th>
-                              <th className="py-2 px-2 text-left">
-                                Restaurant Distance:{" "}
-                                <span className="font-normal">
-                                  {order.restaurantAddress}
-                                </span>
-                              </th>
-                              <th className="py-2 px-2 text-left">
-                                Total Trip:{" "}
-                                <span className="font-normal">
-                                  {order.userAddress}
-                                </span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td className="py-1 px-2 font-semibold">
-                                {order.orderId}
-                              </td>
-                              <td className="py-1 px-2 font-semibold">
-                                ${Number(order.paymentCourier ?? 0).toFixed(2)}
-                              </td>
-                              <td
-                                className={`text-sm ${
-                                  isOnTime(
-                                    CURRENT_TIME_MS,
+                    .map((order, idx) => {
+                      const courierLoc = courierData?.location
+                        ? {
+                            latitude: courierData.location.latitude,
+                            longitude: courierData.location.longitude,
+                          }
+                        : null;
+
+                      const restLoc = order.restaurantLocation
+                        ? coordinateFormat(order.restaurantLocation)
+                        : null;
+
+                      const userLoc = order.userLocation
+                        ? coordinateFormat(order.userLocation)
+                        : null;
+
+                      // Distance from courier -> restaurant (fallback if Firestore field missing)
+                      const restKm =
+                        typeof order.courier_R_Distance === "number"
+                          ? order.courier_R_Distance
+                          : courierLoc && restLoc
+                          ? metersBetween(courierLoc, restLoc) / 1000
+                          : null;
+
+                      // Total trip distance restaurant -> user (fallback if Firestore field missing)
+                      const tripKm =
+                        typeof order.total_Distance === "number"
+                          ? order.total_Distance
+                          : restLoc && userLoc
+                          ? metersBetween(restLoc, userLoc) / 1000
+                          : null;
+
+                      return (
+                        <li
+                          key={`${order.restaurantId}__${order.orderId}__${idx}`}
+                          className="p-4 border rounded shadow-md bg-white"
+                        >
+                          <table className="w-full text-sm mb-3">
+                            <thead className="border-b bg-gray-50">
+                              <tr>
+                                <th className="py-2 px-2 text-left">Order ID</th>
+                                <th className="py-2 px-2 text-left">Payout</th>
+                                <th className="py-2 px-2 text-left">Ready At</th>
+                                <th className="py-2 px-2 text-left">Restaurant Address</th>
+                                <th className="py-2 px-2 text-left">Total Trip</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td className="py-1 px-2 font-semibold">
+                                  {order.orderId}
+                                </td>
+                                <td className="py-1 px-2 font-semibold">
+                                  ${Number(order.paymentCourier ?? 0).toFixed(2)}
+                                </td>
+                                <td
+                                  className={`text-sm ${
+                                    isOnTime(
+                                      CURRENT_TIME_MS,
+                                      order.estimatedPreppedTime
+                                    )
+                                      ? "text-green-600"
+                                      : "text-red-600"
+                                  }`}
+                                >
+                                  {formatOrderTimestamp(
                                     order.estimatedPreppedTime
-                                  )
-                                    ? "text-green-600"
-                                    : "text-red-600"
-                                }`}
-                              >
-                                {formatOrderTimestamp(
-                                  order.estimatedPreppedTime
-                                )}
-                              </td>
-                              <td className="py-1 px-2">
-                                {order.courier_R_Distance}km
-                              </td>
-                              <td className="py-1 px-2">
-                                {order.total_Distance}km
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                                  )}
+                                </td>
+                                <td className="py-1 px-2">
+                                  {order.restaurantAddress}
+                                  <br />
+                                  {formatKm(restKm)} km
+                                </td>
+                                <td className="py-1 px-2">
+                                  {order.userAddress}
+                                  <br />
+                                  {formatKm(tripKm)} km
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
 
-                        {/* Items List */}
-                        <strong className="block text-sm mb-1 text-gray-900">
-                          Items:
-                        </strong>
-                        <ul className="ml-4 list-disc text-xs space-y-0.5">
-                          {order.items?.map((item, i) => (
-                            <li key={i}>
-                              {item.name} × {item.quantity}
-                            </li>
-                          ))}
-                        </ul>
+                          {/* Items List */}
+                          <strong className="block text-sm mb-1 text-gray-900">
+                            Items:
+                          </strong>
+                          <ul className="ml-4 list-disc text-xs space-y-0.5">
+                            {order.items?.map((item, i) => (
+                              <li key={i}>
+                                {item.name} × {item.quantity}
+                              </li>
+                            ))}
+                          </ul>
 
-                        {/* Action Button */}
-                        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                          <button
-                            className="bg-green-600 text-white px-4 py-2 rounded-md shadow hover:bg-green-700 transition text-sm font-medium"
-                            onClick={() => handleAccept(order)}
-                          >
-                            Accept Task
-                          </button>
-                          <span className="text-xs text-gray-500">
-                            Restaurant: {order.storeName || order.restaurantId}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
+                          {/* Action Button */}
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                            <button
+                              className="bg-green-600 text-white px-4 py-2 rounded-md shadow hover:bg-green-700 transition text-sm font-medium"
+                              onClick={() => handleAccept(order)}
+                            >
+                              Accept Task
+                            </button>
+                            <span className="text-xs text-gray-500">
+                              Restaurant: {order.storeName || order.restaurantId}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })};
                 </ul>
               )}
             </>

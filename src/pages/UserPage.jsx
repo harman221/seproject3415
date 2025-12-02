@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { onAuthStateChanged } from "firebase/auth";
+import { divIcon } from "leaflet";
 import {
   collection,
   updateDoc,
@@ -86,6 +87,14 @@ export default function UserPage({ isSidebarOpen }) {
     setFormError("");
     setFormSuccess("");
   };
+
+  // Leaflet car icon for courier marker
+const carIcon = divIcon({
+  className: "courier-car-icon",
+  html: `<div style="font-size:24px; transform: translate(-50%, -50%);">🚗</div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
 
   // VARIABLES: used in search for valid restaurants
   const [searchTerm, setSearchTerm] = useState("");
