@@ -4,6 +4,8 @@ const formatOrderTimestamp = (timestamp) => {
   return timestamp?.toDate ? timestamp.toDate().toLocaleString() : "N/A";
 };
 
+// Contains a list of recently completed orders. 
+// Archives old orders to the "orderHistory" subcollection of the restaurant on visiting the page.
 export default function OrderHistoryTab({ loadingOrders, allOrders = [], archiveOldOrders }) {
   const rejectedOrders = allOrders.filter((order) => order.orderConfirmed === false);
   const R_completedOrders = allOrders.filter((order) => order.courierPickedUp === true);
