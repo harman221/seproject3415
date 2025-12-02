@@ -3,6 +3,7 @@ import { getDistanceInKm } from "../utils/getDistanceInKm.js";
 
 const COURIER_SPEED_KMH = 60;
 
+// Calculates the courier-to-user distance,  courier-to-user estimated time of arrival, and estimated time of delivery used in CourierPage.jsx.
 export const calculateEtaCourier = (courierLoc, userLoc, now) => {
     // 1. Calculate direct distance
     const C_U_distanceKm = getDistanceInKm(
