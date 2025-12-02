@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
 
+// Contains:
+// 1. A toggle switch to change the order acceptance status to: accept, reject, or manual. 
+// 2. A field to change the maximum distance an order is allowed to be placed at. 
+// This value affects whether the restaurant will show up, based on if an ordering user’s location is within range in UserPage.jsx.
 export default function SettingsTab({ settings, onUpdateSettings }) {
   const [autoMode, setAutoMode] = useState(settings?.autoSetting ?? "manual");
   const [serviceRangeInput, setServiceRangeInput] = useState(
@@ -17,7 +21,7 @@ export default function SettingsTab({ settings, onUpdateSettings }) {
     onUpdateSettings?.({ autoSetting: newMode });
   };
 
-  // SERVICE RANGE ENTRY
+  // SERVICE RANGE FIELD
   const handleServiceRangeSubmit = (e) => {
     e.preventDefault();
     const rangeValue = parseInt(serviceRangeInput, 10);
@@ -34,7 +38,7 @@ export default function SettingsTab({ settings, onUpdateSettings }) {
         System Settings
       </h2>
 
-      {/* Automatic Order Handling Section */}
+      {/* Automatic order handling; sets restaurant.autoSetting */}
       <div className="border rounded-lg p-6 bg-white shadow-sm mb-8">
         <h3 className="font-medium text-lg mb-2">Automatic Order Handling</h3>
         <p className="text-gray-600 text-sm mb-4">
@@ -79,7 +83,7 @@ export default function SettingsTab({ settings, onUpdateSettings }) {
         </div>
       </div>
 
-      {/* Service Range Section */}
+      {/* Service range section; sets restaurant.serviceRange */}
       <div className="border rounded-lg p-6 bg-white shadow-sm">
         <h3 className="font-medium text-lg mb-2">Service Range</h3>
         <p className="text-gray-600 text-sm mb-4">
