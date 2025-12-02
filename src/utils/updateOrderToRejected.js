@@ -1,4 +1,5 @@
-// utils/updateOrderToRejected.js
+// Updates an order status to “false”, and delivery status to “rejected” if either: the restaurant manager rejects the order, or the order times out. 
+// Sends a message to the user if this occurs. Used in UserPage.jsx and RestaurantPage.jsx.
 import {
   doc,
   collection,
@@ -20,7 +21,7 @@ export async function updateOrderToRejected(restaurantId, orderId) {
   let messagesRef;
 
   try {
-    // Get userId and check for existing message (Non-Atomic)
+    // Get userId and check for existing message
     const initialOrderSnapshot = await getDoc(orderDocRef);
     if (!initialOrderSnapshot.exists()) {
       console.warn(`Order ${orderId} not found for auto-rejection.`);
@@ -64,7 +65,7 @@ export async function updateOrderToRejected(restaurantId, orderId) {
         });
 
         messageWasCreated = true;
-        console.log(`📩 Transaction: Timeout message prepared for user ${userId}.`);
+        console.log(`Transaction: Timeout message prepared for user ${userId}.`);
       }
     });
 
