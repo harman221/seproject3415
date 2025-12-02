@@ -4,6 +4,7 @@ import settingsIcon from "../../assets/settings.svg";
 import receiptIcon from "../../assets/receipt.svg";
 import ordersIcon from "../../assets/orders.svg";
 
+// Side bar that handles user tab clicks by redirecting to appropriate view
 function NavButton({ active, onClick, iconSrc, children, ariaLabel, newOrderCount = 0 }) {
     const showBadge = newOrderCount > 0;
     
