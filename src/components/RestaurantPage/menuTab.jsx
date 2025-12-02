@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import defaultImage from "../../assets/defaultImgUrl.png";
 const DEFAULT_IMAGE_URL = defaultImage;
 
+// Contains forms to edit the restaurant menu and options.
 const MenuTab = ({ restaurantData, setRestaurantData, db, doc, updateDoc }) => {
   const [newMenuItem, setNewMenuItem] = useState({
     name: "",
@@ -19,7 +20,7 @@ const MenuTab = ({ restaurantData, setRestaurantData, db, doc, updateDoc }) => {
   const [newModPrice, setNewModPrice] = useState("");
   const [editingMod, setEditingMod] = useState({});
 
-  // --- Handlers for New Item Modifications ---
+  // New item modification handler
   const handleAddModification = () => {
     if (!newModName.trim()) {
       alert("Modification name is required.");
@@ -53,7 +54,7 @@ const MenuTab = ({ restaurantData, setRestaurantData, db, doc, updateDoc }) => {
     }));
   };
 
-  // --- Handlers for Existing Item Modifications ---
+  // Existing item modification handler
   const handleRemoveExistingModification = (itemIndex, modIndex) => {
     setRestaurantData((prev) => {
       const newMenu = [...(prev.menu || [])];
