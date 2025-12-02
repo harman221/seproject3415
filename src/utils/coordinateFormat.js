@@ -1,3 +1,5 @@
+// This formats all location coordinates into a [latitude, longitude] array. Example: [44.3429282° N, 79.6911183° W]. 
+// During processing, the location format may change into alternate formats. This code standardizes the format in the database.
 export function coordinateFormat(locationObject) {
     if (!locationObject) return null;
 
